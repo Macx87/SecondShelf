@@ -27,7 +27,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $otp = rand(100000, 999999); // 6-digit OTP
 
     // Check if user already exists in users table
-    $check = $conn->query("SELECT * FROM users WHERE email='$email'");
+    $stmt = $conn->prepare("SELECT * FROM users WHERE email=?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $check = $stmt->get_result();
     if ($check->num_rows > 0) {
         $_SESSION['error'] = "Email already registered.";
         header("Location: signup.php");
@@ -35,13 +38,20 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 
     // Check if email exists in pending_users
-    $check_pending = $conn->query("SELECT * FROM pending_users WHERE email='$email'");
+    $stmt = $conn->prepare("SELECT * FROM pending_users WHERE email=?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $check_pending = $stmt->get_result();
     if ($check_pending->num_rows > 0) {
         // Update existing record with new OTP
-        $conn->query("UPDATE pending_users SET otp='$otp' WHERE email='$email'");
+        $updateStmt = $conn->prepare("UPDATE pending_users SET otp=? WHERE email=?");
+        $updateStmt->bind_param("ss", $otp, $email);
+        $updateStmt->execute();
     } else {
         // Insert new record
-        $conn->query("INSERT INTO pending_users (name, email, password, otp) VALUES ('$name', '$email', '$password', '$otp')");
+        $insertStmt = $conn->prepare("INSERT INTO pending_users (name, email, password, otp) VALUES (?, ?, ?, ?)");
+        $insertStmt->bind_param("ssss", $name, $email, $password, $otp);
+        $insertStmt->execute();
     }
 
     // Send OTP via email
@@ -105,7 +115,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         header("Location: verify.php");
         echo "Redirecting to verification page... <a href='verify.php'>Click here if not redirected</a>.";
         exit();
-
     } catch (Exception $e) {
         echo "Mailer Error: " . $mail->ErrorInfo;
         exit();
@@ -114,14 +123,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 ?>
 
 <?php
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 $user_name = $_SESSION['user_name'] ?? null;
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -130,76 +140,107 @@ $user_name = $_SESSION['user_name'] ?? null;
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="../css/styles.css" rel="stylesheet">
 </head>
+
 <body>
 
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark shadow">
-    <div class="container">
-        <a class="navbar-brand" href="../index.php">📚 Second-Hand Books</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav ms-auto">
-                <li class="nav-item"><a class="nav-link" href="../index.php">Home</a></li>
-                <li class="nav-item"><a class="nav-link" href="../sell.php">Sell a Book</a></li>
-                <?php if ($user_name): ?>
-                    <li class="nav-item"><a class="nav-link" href="../profile.php"><?php echo htmlspecialchars($user_name); ?></a></li>
-                    <li class="nav-item"><a class="nav-link" href="../logout.php">Logout</a></li>
-                <?php else: ?>
-                    <li class="nav-item"><a class="nav-link" href="login.php">Login</a></li>
-                    <li class="nav-item"><a class="nav-link" href="signup.php">Signup</a></li>
-                <?php endif; ?>
-            </ul>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark shadow">
+        <div class="container">
+            <a class="navbar-brand" href="../index.php">
+                <img src="../assets/img/secondshelf_logo.jpg" alt="SecondShelf Logo" height="40px" class="d-inline-block align-text-top me-2">
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="../index.php">Home</a></li>
+                    <li class="nav-item"><a class="nav-link" href="../sell.php">Sell a Book</a></li>
+                    <?php if ($user_name): ?>
+                        <li class="nav-item"><a class="nav-link" href="../profile.php"><?php echo htmlspecialchars($user_name); ?></a></li>
+                        <li class="nav-item"><a class="nav-link" href="../logout.php">Logout</a></li>
+                    <?php else: ?>
+                        <li class="nav-item"><a class="nav-link" href="../auth/login.php">Login</a></li>
+                        <li class="nav-item"><a class="nav-link" href="../auth/signup.php">Signup</a></li>
+                    <?php endif; ?>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="auth-container">
+            <h2>Signup</h2>
+
+            <?php
+            if (isset($_SESSION['error'])) {
+                echo "<div class='alert alert-danger text-center'>" . $_SESSION['error'] . "</div>";
+                unset($_SESSION['error']);
+            }
+            ?>
+
+            <form action="" method="POST">
+                <div class="mb-3">
+                    <input type="text" name="name" class="form-control" placeholder="Full Name" required>
+                </div>
+                <div class="mb-3">
+                    <input type="email" name="email" class="form-control" placeholder="Email" required>
+                </div>
+                <div class="mb-3">
+                    <input type="password" name="password" class="form-control" placeholder="Password" pattern=".{8,}" title="Password must be at least 8 characters long" required>
+                    <small class="form-text text-muted">Password must be at least 8 characters long</small>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Signup</button>
+                <div class="text-center mt-3">
+                    <a href="login.php">Already have an account? Login</a>
+                </div>
+            </form>
         </div>
     </div>
-</nav>
 
-<!-- Main Content -->
-<div class="main-content">
-    <div class="auth-container">
-        <h2>Signup</h2>
-
-        <?php
-        if (isset($_SESSION['error'])) {
-            echo "<div class='alert alert-danger text-center'>" . $_SESSION['error'] . "</div>";
-            unset($_SESSION['error']);
-        }
-        ?>
-
-        <form action="" method="POST">
-            <div class="mb-3">
-                <input type="text" name="name" class="form-control" placeholder="Full Name" required>
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-4 mb-3 mb-md-0">
+                    <div class="footer-brand">
+                        <img src="../assets/img/secondshelf_logo.jpg" alt="SecondShelf Logo" height="40" class="mb-2" style="height: 70px;">
+                        <p class="m-0">&copy; 2025 SecondShelf </p>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-3 mb-md-0">
+                    <div class="footer-message">
+                        <h5>Share the Joy of Reading</h5>
+                        <p>"Every used book finds a new home, every story finds a new heart. Buy, sell, and sustain the cycle of knowledge."</p>
+                        <h5 class="mt-3">Customer Care</h5>
+                        <p><i class="bi bi-telephone-fill"></i> +91 9876543210</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <h5>Quick Links</h5>
+                    <ul class="list-unstyled footer-links">
+                        <li><a href="../about.php" class="footer-link">About Us</a></li>
+                        <li><a href="../terms.php" class="footer-link">Terms and Conditions</a></li>
+                        <li><a href="../privacy.php" class="footer-link">Privacy Policy</a></li>
+                        <li><a href="../safety-tips.php" class="footer-link">Safety Tips</a></li>
+                        <li><a href="../buy-books-india.php" class="footer-link">Buy Second Hand Books Online In India</a></li>
+                    </ul>
+                </div>
             </div>
-            <div class="mb-3">
-                <input type="email" name="email" class="form-control" placeholder="Email" required>
-            </div>
-            <div class="mb-3">
-                <input type="password" name="password" class="form-control" placeholder="Password" pattern=".{8,}" title="Password must be at least 8 characters long" required>
-                <small class="form-text text-muted">Password must be at least 8 characters long</small>
-            </div>
-            <button type="submit" class="btn btn-primary w-100">Signup</button>
-            <div class="text-center mt-3">
-                <a href="login.php">Already have an account? Login</a>
-            </div>
-        </form>
-    </div>
-</div>
+        </div>
+    </footer>
 
-<!-- Footer -->
-<footer class="footer">
-    <p class="m-0">&copy; 2025 Second-Hand Book Platform | <a href="../about.php">About Us</a></p>
-</footer>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-document.querySelector('form').addEventListener('submit', function(e) {
-    const password = document.querySelector('input[name="password"]').value;
-    if (password.length < 8) {
-        e.preventDefault();
-        alert('Password must be at least 8 characters long');
-    }
-});
-</script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const password = document.querySelector('input[name="password"]').value;
+            if (password.length < 8) {
+                e.preventDefault();
+                alert('Password must be at least 8 characters long');
+            }
+        });
+    </script>
 </body>
+
 </html>
