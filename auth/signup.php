@@ -60,12 +60,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'secondhandbookplatform@gmail.com'; // your Gmail
-        $mail->Password   = 'vmposqjrkrrdvufs';          // your app password
+        $mail->Username   = 'your_email'; // your Gmail
+        $mail->Password   = 'your_password';          // your app password
         $mail->SMTPSecure = 'tls';
         $mail->Port       = 587;
 
-        $mail->setFrom('secondhandbookplatform@gmail.com', 'Secondhand Books');
+        $mail->setFrom('your_email', 'Secondhand Books');
         $mail->addAddress($email, $name);
 
         $mail->isHTML(true);
